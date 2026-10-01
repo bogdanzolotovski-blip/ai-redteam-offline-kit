@@ -116,7 +116,7 @@ sudo docker run -d --name portainer --restart=unless-stopped --pull=never \
 
 ```bash
 sudo docker cp deployment/Modelfile ollama:/tmp/Modelfile
-sudo docker exec ollama ollama create redteam-local -f /tmp/Modelfile
+sudo docker exec ollama ollama create redteam-qwen35-128k -f /tmp/Modelfile
 sudo docker exec ollama ollama list
 ```
 
