@@ -1,0 +1,46 @@
+name: Recover model and finish existing kit
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: offline-kit
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: offline-2026-10-01-v1
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify existing release is still a draft
+        run: test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+      - name: Download and stream model archive into release parts
+        run: |
+          mkdir -p out/modelstore
+          docker run -d --name model-download -p 127.0.0.1:11434:11434 -v "$PWD/out/modelstore:/root/.ollama" ollama/ollama:0.35.0
+          for attempt in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags && break || sleep 2; done
+          docker exec model-download ollama pull huihui_ai/qwen3.5-abliterated:9b-q4_K
+          curl -fsS http://127.0.0.1:11434/api/tags > out/ollama-model-tags.json
+          python3 -c 'import json; x=json.load(open("out/ollama-model-tags.json")); assert len(x["models"])==1; print(x)'
+          docker stop model-download
+          sudo python3 scripts/check-model.py out/modelstore
+          sudo find out/modelstore -maxdepth 1 -name 'id_*' -type f -delete
+          docker rm model-download
+          docker image rm ollama/ollama:0.35.0
+          gh release upload "$RELEASE_TAG" out/ollama-model-tags.json --clobber
+          sudo tar -C out/modelstore -czf - . | python3 scripts/publish.py --stdin out/ollama-modelstore.tar.gz '{"model":"huihui_ai/qwen3.5-abliterated:9b-q4_K","verification":"All model blob SHA256 verified; archive streamed to bound disk use; GPU inference not tested"}'
+      - name: Publish current scripts and instructions
+        run: |
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
+      - name: Verify all artifacts and publish completed release
+        run: |
+          gh release download "$RELEASE_TAG" -p '*.manifest.json' -D out --clobber
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > out/release.json
+          python3 scripts/finalize.py out
+          gh release upload "$RELEASE_TAG" out/MANIFEST.json out/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

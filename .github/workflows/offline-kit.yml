@@ -84,10 +84,10 @@ jobs:
           sudo python3 scripts/check-model.py out/modelstore
           # Model stores must not redistribute the download container's identity key.
           sudo find out/modelstore -maxdepth 1 -name 'id_*' -type f -delete
-          sudo tar -C out/modelstore -czf out/ollama-modelstore.tar.gz .
-          sudo chown "$(id -u):$(id -g)" out/ollama-modelstore.tar.gz
+          docker rm model-download
+          docker image rm ollama/ollama:0.35.0
           gh release upload "$RELEASE_TAG" out/ollama-model-tags.json --clobber
-          python3 scripts/publish.py out/ollama-modelstore.tar.gz '{"model":"huihui_ai/qwen3.5-abliterated:9b-q4_K","verification":"All local blob SHA256 digests verified; GPU inference not tested"}'
+          sudo tar -C out/modelstore -czf - . | python3 scripts/publish.py --stdin out/ollama-modelstore.tar.gz '{"model":"huihui_ai/qwen3.5-abliterated:9b-q4_K","verification":"All local blob SHA256 digests verified; GPU inference not tested"}'
   packages:
     needs: prepare
     runs-on: ubuntu-24.04

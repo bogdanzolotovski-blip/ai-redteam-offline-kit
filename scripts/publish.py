@@ -7,12 +7,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-source = Path(sys.argv[1])
-metadata = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+streaming = sys.argv[1] == '--stdin'
+source = Path(sys.argv[2] if streaming else sys.argv[1])
+metadata_index = 3 if streaming else 2
+metadata = json.loads(sys.argv[metadata_index]) if len(sys.argv) > metadata_index else {}
 limit = 1900 * 1024 * 1024
 full = hashlib.sha256()
 parts = []
-with source.open('rb') as src:
+with (sys.stdin.buffer if streaming else source.open('rb')) as src:
     index = 0
     while True:
         first = src.read(8 * 1024 * 1024)
@@ -35,7 +37,7 @@ with source.open('rb') as src:
         subprocess.run(['gh', 'release', 'upload', os.environ['RELEASE_TAG'], str(part), '--clobber'], check=True)
         part.unlink()
         index += 1
-manifest = {'filename': source.name, 'size': source.stat().st_size,
+manifest = {'filename': source.name, 'size': sum(p['size'] for p in parts),
             'sha256': full.hexdigest(), 'parts': parts, 'provenance': metadata}
 manifest_path = source.with_name(source.name + '.manifest.json')
 manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
