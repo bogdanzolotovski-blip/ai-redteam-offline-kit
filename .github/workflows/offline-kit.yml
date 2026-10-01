@@ -1,0 +1,134 @@
+name: Build verified offline kit
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: offline-kit
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: offline-2026-10-01-v1
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Create draft release
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft --title 'Ubuntu 24.04 / RTX 5070 Ti offline kit' --notes-file RELEASE-NOTES.md
+  ubuntu:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Download and verify official Ubuntu Server ISO
+        run: |
+          mkdir out
+          cd out
+          base=https://releases.ubuntu.com/24.04
+          iso=ubuntu-24.04.5-live-server-amd64.iso
+          curl -fL --retry 5 "$base/$iso" -o "$iso"
+          curl -fL --retry 5 "$base/SHA256SUMS" -o ubuntu-SHA256SUMS
+          curl -fL --retry 5 "$base/SHA256SUMS.gpg" -o ubuntu-SHA256SUMS.gpg
+          grep "[* ]$iso$" ubuntu-SHA256SUMS | sha256sum -c -
+          gh release upload "$RELEASE_TAG" ubuntu-SHA256SUMS ubuntu-SHA256SUMS.gpg --clobber
+          python3 ../scripts/publish.py "$iso" '{"url":"https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso","verification":"Official SHA256SUMS matched; GPG signature supplied, not verified by this build"}'
+  images:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ghcr.io/open-webui/open-webui:v0.11.4
+            name: docker-open-webui
+          - image: ollama/ollama:0.35.0
+            name: docker-ollama
+          - image: portainer/portainer-ce:lts
+            name: docker-portainer
+          - image: ubuntu:24.04
+            name: docker-ubuntu
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Pull Linux amd64 image and archive
+        env:
+          IMAGE: ${{ matrix.image }}
+          ARTIFACT: ${{ matrix.name }}
+        run: |
+          mkdir out
+          docker pull --platform linux/amd64 "$IMAGE"
+          docker image inspect "$IMAGE" > "out/$ARTIFACT.inspect.json"
+          test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = amd64
+          test "$(docker image inspect --format '{{.Os}}' "$IMAGE")" = linux
+          docker save "$IMAGE" | gzip -1 > "out/$ARTIFACT.tar.gz"
+          gh release upload "$RELEASE_TAG" "out/$ARTIFACT.inspect.json" --clobber
+          python3 scripts/publish.py "out/$ARTIFACT.tar.gz" "$(python3 -c 'import json,sys; x=json.load(open(sys.argv[1]))[0]; print(json.dumps({"image":sys.argv[2],"id":x["Id"],"repo_digests":x["RepoDigests"],"architecture":x["Architecture"]}))' "out/$ARTIFACT.inspect.json" "$IMAGE")"
+  model:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Download model via official Ollama client
+        run: |
+          mkdir -p out/modelstore
+          docker run -d --name model-download -p 127.0.0.1:11434:11434 -v "$PWD/out/modelstore:/root/.ollama" ollama/ollama:0.35.0
+          for attempt in $(seq 1 60); do curl -fsS http://127.0.0.1:11434/api/tags && break || sleep 2; done
+          docker exec model-download ollama pull huihui_ai/qwen3.5-abliterated:9b-q4_K
+          curl -fsS http://127.0.0.1:11434/api/tags > out/ollama-model-tags.json
+          docker stop model-download
+          sudo python3 scripts/check-model.py out/modelstore
+          # Model stores must not redistribute the download container's identity key.
+          sudo find out/modelstore -maxdepth 1 -name 'id_*' -type f -delete
+          sudo tar -C out/modelstore -czf out/ollama-modelstore.tar.gz .
+          sudo chown "$(id -u):$(id -g)" out/ollama-modelstore.tar.gz
+          gh release upload "$RELEASE_TAG" out/ollama-model-tags.json --clobber
+          python3 scripts/publish.py out/ollama-modelstore.tar.gz '{"model":"huihui_ai/qwen3.5-abliterated:9b-q4_K","verification":"All local blob SHA256 digests verified; GPU inference not tested"}'
+  packages:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build Ubuntu package dependency closure
+        run: |
+          mkdir -p out/ubuntu-packages
+          docker run --rm -v "$PWD/scripts:/scripts:ro" -v "$PWD/out/ubuntu-packages:/out" ubuntu:24.04 bash /scripts/build-packages.sh
+      - name: Check offline dependency resolution and install runtime packages
+        run: |
+          docker run --rm --network none -v "$PWD/scripts:/scripts:ro" -v "$PWD/out/ubuntu-packages:/bundle:ro" ubuntu:24.04 bash /scripts/verify-packages.sh 2>&1 | tee out/offline-package-verification.log
+          sudo tar -C out -czf out/ubuntu-packages.tar.gz ubuntu-packages
+          sudo chown "$(id -u):$(id -g)" out/ubuntu-packages.tar.gz
+          gh release upload "$RELEASE_TAG" out/offline-package-verification.log --clobber
+          python3 scripts/publish.py out/ubuntu-packages.tar.gz '{"distribution":"Ubuntu 24.04 noble amd64","verification":"Dependency closure resolved without network; Docker, Toolkit, nginx and LDAP tools installed without network; GPU driver not loaded"}'
+  source:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Download Open WebUI source and license notices
+        run: |
+          mkdir out
+          curl -fL --retry 5 https://github.com/open-webui/open-webui/archive/refs/tags/v0.11.4.tar.gz -o out/open-webui-v0.11.4-source.tar.gz
+          tar -tzf out/open-webui-v0.11.4-source.tar.gz > out/open-webui-source-files.txt
+          grep '/LICENSE$' out/open-webui-source-files.txt
+          python3 scripts/publish.py out/open-webui-v0.11.4-source.tar.gz '{"url":"https://github.com/open-webui/open-webui/archive/refs/tags/v0.11.4.tar.gz","license":"Upstream LICENSE included, preserve branding and license requirements"}'
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
+  finalize:
+    needs: [ubuntu, images, model, packages, source]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify uploaded sizes and digests and publish completed release
+        run: |
+          mkdir out
+          gh release download "$RELEASE_TAG" -p '*.manifest.json' -D out
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > out/release.json
+          python3 scripts/finalize.py out
+          gh release upload "$RELEASE_TAG" out/MANIFEST.json out/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
