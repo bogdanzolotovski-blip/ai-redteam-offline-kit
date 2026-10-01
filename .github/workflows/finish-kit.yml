@@ -11,7 +11,23 @@ env:
   GH_TOKEN: ${{ github.token }}
   GH_REPO: ${{ github.repository }}
 jobs:
+  ollama-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Stream Linux amd64 Ollama container into release parts
+        run: |
+          mkdir out
+          image=ollama/ollama:0.35.0
+          docker pull --platform linux/amd64 "$image"
+          docker image inspect "$image" > out/docker-ollama.inspect.json
+          test "$(docker image inspect --format '{{.Architecture}}' "$image")" = amd64
+          test "$(docker image inspect --format '{{.Os}}' "$image")" = linux
+          gh release upload "$RELEASE_TAG" out/docker-ollama.inspect.json --clobber
+          docker save "$image" | gzip -1 | python3 scripts/publish.py --stdin out/docker-ollama.tar.gz "$(python3 -c 'import json; x=json.load(open("out/docker-ollama.inspect.json"))[0]; print(json.dumps({"image":"ollama/ollama:0.35.0","id":x["Id"],"repo_digests":x["RepoDigests"],"architecture":x["Architecture"]}))')"
   recover:
+    needs: ollama-image
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:

@@ -64,9 +64,8 @@ jobs:
           docker image inspect "$IMAGE" > "out/$ARTIFACT.inspect.json"
           test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = amd64
           test "$(docker image inspect --format '{{.Os}}' "$IMAGE")" = linux
-          docker save "$IMAGE" | gzip -1 > "out/$ARTIFACT.tar.gz"
           gh release upload "$RELEASE_TAG" "out/$ARTIFACT.inspect.json" --clobber
-          python3 scripts/publish.py "out/$ARTIFACT.tar.gz" "$(python3 -c 'import json,sys; x=json.load(open(sys.argv[1]))[0]; print(json.dumps({"image":sys.argv[2],"id":x["Id"],"repo_digests":x["RepoDigests"],"architecture":x["Architecture"]}))' "out/$ARTIFACT.inspect.json" "$IMAGE")"
+          docker save "$IMAGE" | gzip -1 | python3 scripts/publish.py --stdin "out/$ARTIFACT.tar.gz" "$(python3 -c 'import json,sys; x=json.load(open(sys.argv[1]))[0]; print(json.dumps({"image":sys.argv[2],"id":x["Id"],"repo_digests":x["RepoDigests"],"architecture":x["Architecture"]}))' "out/$ARTIFACT.inspect.json" "$IMAGE")"
   model:
     needs: prepare
     runs-on: ubuntu-24.04
