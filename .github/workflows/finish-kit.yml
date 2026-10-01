@@ -51,7 +51,7 @@ jobs:
           sudo tar -C out/modelstore -czf - . | python3 scripts/publish.py --stdin out/ollama-modelstore.tar.gz '{"model":"huihui_ai/qwen3.5-abliterated:9b-q4_K","verification":"All model blob SHA256 verified; archive streamed to bound disk use; GPU inference not tested"}'
       - name: Publish current scripts and instructions
         run: |
-          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md TRANSFER.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
           python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
       - name: Verify all artifacts and publish completed release
         run: |

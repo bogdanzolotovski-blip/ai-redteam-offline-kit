@@ -116,7 +116,7 @@ jobs:
           tar -tzf out/open-webui-v0.11.4-source.tar.gz > out/open-webui-source-files.txt
           grep '/LICENSE$' out/open-webui-source-files.txt
           python3 scripts/publish.py out/open-webui-v0.11.4-source.tar.gz '{"url":"https://github.com/open-webui/open-webui/archive/refs/tags/v0.11.4.tar.gz","license":"Upstream LICENSE included, preserve branding and license requirements"}'
-          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md TRANSFER.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
           python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
   finalize:
     needs: [ubuntu, images, model, packages, source]

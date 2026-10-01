@@ -2,6 +2,8 @@
 
 Целевая система: Ubuntu Server 24.04 LTS **amd64**, RTX 5070 Ti 16 ГБ, RAM 32 ГБ. Машина подключается к корпоративной сети без вступления в домен; Open WebUI обращается к существующему LDAP/AD. Каталог и учетные записи AD в комплект не входят.
 
+**Пошаговый перенос Windows → USB/SSD/SSH → корпоративный Linux: [TRANSFER.md](TRANSFER.md).** Включены варианты скачивания через браузер и CLI, восстановления без Python на Windows и повторной проверки после копирования.
+
 ## Что скачано
 
 Готовые большие файлы публикуются в **Releases** после успешного завершения всех задач сборки. В Git находятся только инструкции и скрипты. Если Release пока Draft или workflow завершился ошибкой, комплект еще не готов.
@@ -56,7 +58,7 @@ sha256sum -c SHA256SUMS
 
 ```bash
 cd /opt/ai-redteam-offline
-tar -xzf downloads/ubuntu-packages.tar.gz
+sudo tar -xzf downloads/ubuntu-packages.tar.gz
 sudo bash scripts/install-packages.sh /opt/ai-redteam-offline/ubuntu-packages
 sudo reboot
 ```

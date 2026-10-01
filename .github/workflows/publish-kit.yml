@@ -19,7 +19,7 @@ jobs:
         run: |
           python3 scripts/test-restore.py
           mkdir out
-          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md TRANSFER.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
           python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
       - name: Check GitHub digests for every required part and publish
         run: |
