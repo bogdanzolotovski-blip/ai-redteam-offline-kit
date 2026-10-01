@@ -1,0 +1,30 @@
+name: Verify and publish existing complete kit
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: offline-kit
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: offline-2026-10-01-v1
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify restoration script and archive current instructions
+        run: |
+          python3 scripts/test-restore.py
+          mkdir out
+          tar --exclude=.git --exclude=out -czf out/offline-kit-instructions.tar.gz README.md RELEASE-NOTES.md UPSTREAM.md deployment scripts
+          python3 scripts/publish.py out/offline-kit-instructions.tar.gz '{"commit":"'"$GITHUB_SHA"'","contents":"Offline scripts and deployment guide"}'
+      - name: Check GitHub digests for every required part and publish
+        run: |
+          gh release download "$RELEASE_TAG" -p '*.manifest.json' -D out --clobber
+          gh api "repos/$GH_REPO/releases" --jq '.[] | select(.tag_name == "offline-2026-10-01-v1")' > out/release.json
+          python3 scripts/finalize.py out
+          gh release upload "$RELEASE_TAG" out/MANIFEST.json out/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

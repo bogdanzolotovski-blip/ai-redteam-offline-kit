@@ -127,7 +127,7 @@ jobs:
         run: |
           mkdir out
           gh release download "$RELEASE_TAG" -p '*.manifest.json' -D out
-          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > out/release.json
+          gh api "repos/$GH_REPO/releases" --jq '.[] | select(.tag_name == "offline-2026-10-01-v1")' > out/release.json
           python3 scripts/finalize.py out
           gh release upload "$RELEASE_TAG" out/MANIFEST.json out/SHA256SUMS --clobber
           gh release edit "$RELEASE_TAG" --draft=false
